@@ -9,7 +9,7 @@ const AMAZON_CA_URL = 'https://www.amazon.ca'
 const AMAZON_COM_URL = 'https://www.amazon.com'
 const MOVERS_AND_SHAKERS_URL = `${AMAZON_CA_URL}/gp/movers-and-shakers`
 
-const MAX_SEARCH_LINKS = 3
+const MAX_SEARCH_LINKS = 10
 
 const PRODUCTS_LIST_ATTR = 'data-client-recs-list'
 const BREADCRUMB_SELECTOR = '#wayfinding-breadcrumbs_feature_div li:last-of-type a'
@@ -99,7 +99,7 @@ const start = async () => {
         await page.waitForSelector(SEARCH_INPUT_SELECTOR)
         await page.type(SEARCH_INPUT_SELECTOR, category)
         await page.bringToFront()
-        page.click(SEARCH_SUBMIT_SELECTOR)
+        await Promise.all([page.click(SEARCH_SUBMIT_SELECTOR), page.waitForNavigation()])
 
         await page.waitForSelector(DEPARTMENT_SELECTOR)
         await page.bringToFront()
@@ -107,7 +107,7 @@ const start = async () => {
 
         await page.waitForSelector(SEARCH_SUBMIT_SELECTOR)
         await page.bringToFront()
-        await page.click(SEARCH_SUBMIT_SELECTOR)
+        await Promise.all([page.click(SEARCH_SUBMIT_SELECTOR), page.waitForNavigation()])
 
         searchUrl = page.url()
       })
@@ -119,6 +119,7 @@ const start = async () => {
       let category
 
       await goto(`${AMAZON_CA_URL}/dp/${productId}`, async (page) => {
+        await page.waitForSelector(BREADCRUMB_SELECTOR)
         category = await page.$eval(BREADCRUMB_SELECTOR, (el) => el.textContent.trim())
       })
 
