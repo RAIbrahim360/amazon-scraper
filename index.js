@@ -10,6 +10,7 @@ const AMAZON_COM_URL = 'https://www.amazon.com'
 const MOVERS_AND_SHAKERS_URL = `${AMAZON_CA_URL}/gp/movers-and-shakers`
 
 const MAX_SEARCH_LINKS = 10
+const MAX_TABS_CHUNK = 5
 
 const PRODUCTS_LIST_ATTR = 'data-client-recs-list'
 const BREADCRUMB_SELECTOR = '#wayfinding-breadcrumbs_feature_div li:last-of-type a'
@@ -25,7 +26,12 @@ const REJECTED_URL_PATTERNS = [
   '/*.amazon-adsystem.com',
   '/*.adnxs.com',
 ]
-const REJECTED_RESOURCE_TYPES = ['stylesheet', 'image', 'font']
+const REJECTED_RESOURCE_TYPES = ['stylesheet', 'image', 'media', 'font']
+
+const chunk = (arr, size) =>
+  Array.from({ length: Math.ceil(arr.length / size) }, (v, i) =>
+    arr.slice(i * size, i * size + size)
+  )
 
 const start = async () => {
   const searchLinks = []
@@ -35,7 +41,7 @@ const start = async () => {
   try {
     browser = await puppeteer.launch({
       headless: false,
-      channel: 'chrome',
+      protocolTimeout: 0,
     })
 
     const setPageRequestInterception = async (page, allowedResourceTypes = []) => {
@@ -78,10 +84,14 @@ const start = async () => {
       })
     }
     const goto = async (url, callback, allowedResourceTypes) => {
-      let page
+      let context
       try {
-        page = await browser.newPage()
-        await setPageRequestInterception(page, allowedResourceTypes)
+        context = await browser.createBrowserContext()
+        const page = await context.newPage()
+        await Promise.all([
+          setPageRequestInterception(page, allowedResourceTypes),
+          page.setDefaultTimeout(0),
+        ])
 
         Logger.info(url)
         await page.goto(url)
@@ -89,7 +99,7 @@ const start = async () => {
       } catch (err) {
         Logger.error(err)
       }
-      page?.close()
+      context?.close()
     }
 
     const getCategorySearchLink = async (url, category) => {
@@ -98,15 +108,14 @@ const start = async () => {
       await goto(url, async (page) => {
         await page.waitForSelector(SEARCH_INPUT_SELECTOR)
         await page.type(SEARCH_INPUT_SELECTOR, category)
-        await page.bringToFront()
+
+        await page.waitForSelector(SEARCH_SUBMIT_SELECTOR)
         await Promise.all([page.click(SEARCH_SUBMIT_SELECTOR), page.waitForNavigation()])
 
         await page.waitForSelector(DEPARTMENT_SELECTOR)
-        await page.bringToFront()
         await Promise.all([page.click(DEPARTMENT_SELECTOR), page.waitForNavigation()])
 
         await page.waitForSelector(SEARCH_SUBMIT_SELECTOR)
-        await page.bringToFront()
         await Promise.all([page.click(SEARCH_SUBMIT_SELECTOR), page.waitForNavigation()])
 
         searchUrl = page.url()
@@ -128,7 +137,9 @@ const start = async () => {
           getCategorySearchLink(AMAZON_CA_URL, category),
           getCategorySearchLink(AMAZON_COM_URL, category),
         ])
-        searchLinks.push(amazonCaSearchLink, amazonComSearchLink)
+        if (searchLinks.length < MAX_SEARCH_LINKS) {
+          searchLinks.push(amazonCaSearchLink, amazonComSearchLink)
+        }
       }
     }
 
@@ -153,9 +164,8 @@ const start = async () => {
         ['stylesheet']
       )
 
-      for (const productId of productsAsin) {
-        await getProductCategorySearchLinks(productId)
-
+      for (const chunks of chunk(productsAsin, MAX_TABS_CHUNK)) {
+        await Promise.all(chunks.map((productId) => getProductCategorySearchLinks(productId)))
         if (searchLinks.length >= MAX_SEARCH_LINKS) {
           break
         }
