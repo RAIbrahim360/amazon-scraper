@@ -80,10 +80,7 @@ const start = async () => {
       let page
       try {
         page = await browser.newPage()
-        await Promise.all([
-          setPageRequestInterception(page, allowedResourceTypes),
-          page.setDefaultTimeout(0),
-        ])
+        await setPageRequestInterception(page, allowedResourceTypes)
 
         Logger.info(url)
         await page.goto(url)
