@@ -67,7 +67,7 @@ const start = async () => {
           try {
             await page.waitForSelector(CAPTCHA_SELECTOR, { timeout: 0 })
             Logger.error('Captcha')
-            await page.reload(url)
+            await page.reload(url, { waitUntil: 'networkidle0' })
           } catch (err) {}
         } else {
           const status = res.status()
@@ -75,27 +75,31 @@ const start = async () => {
           Logger.error(`${status}: "${url}"`)
 
           if (MUST_SUCCESS_AJAX_URLS.find((pattern) => url.match(pattern))) {
-            await page.reload(url)
+            await page.reload(url, { waitUntil: 'networkidle0' })
           } else if (status === 429) {
-            await page.goto(url)
+            await page.goto(url, { waitUntil: 'networkidle0' })
           }
         }
       })
     }
-    const goto = async (url, callback, allowedResourceTypes) => {
-      let context
-      try {
-        context = await browser.createBrowserContext()
-        const page = await context.newPage()
-        await setPageRequestInterception(page, allowedResourceTypes)
+    const goto = (url, callback, allowedResourceTypes) => {
+      return new Promise(async (resolve, reject) => {
+        let context
+        try {
+          context = await browser.createBrowserContext()
+          const page = await context.newPage()
+          await setPageRequestInterception(page, allowedResourceTypes)
 
-        Logger.info(url)
-        await page.goto(url)
-        await callback(page)
-      } catch (err) {
-        Logger.error(err)
-      }
-      context?.close()
+          Logger.info(url)
+          await page.goto(url, { waitUntil: 'networkidle0' })
+          await callback(page)
+          resolve()
+        } catch (err) {
+          Logger.error(err)
+          reject(err)
+        }
+        context?.close()
+      })
     }
 
     const getCategorySearchLink = async (url, category) => {
@@ -123,42 +127,48 @@ const start = async () => {
     const getProductCategorySearchLinks = async (productId) => {
       let category
 
-      await goto(`${AMAZON_CA_URL}/dp/${productId}`, async (page) => {
-        await page.waitForSelector(BREADCRUMB_SELECTOR)
-        category = await page.$eval(BREADCRUMB_SELECTOR, (el) => el.textContent.trim())
-      })
+      try {
+        await goto(`${AMAZON_CA_URL}/dp/${productId}`, async (page) => {
+          await page.waitForSelector(BREADCRUMB_SELECTOR)
+          category = await page.$eval(BREADCRUMB_SELECTOR, (el) => el.textContent.trim())
+        })
+      } catch (err) {}
 
       if (!categories.includes(category)) {
-        const [amazonCaSearchLink, amazonComSearchLink] = await Promise.all([
-          getCategorySearchLink(AMAZON_CA_URL, category),
-          getCategorySearchLink(AMAZON_COM_URL, category),
-        ])
-        if (searchLinks.length < MAX_SEARCH_LINKS) {
-          searchLinks.push(amazonCaSearchLink, amazonComSearchLink)
-        }
+        try {
+          const [amazonCaSearchLink, amazonComSearchLink] = await Promise.all([
+            getCategorySearchLink('', category),
+            getCategorySearchLink(AMAZON_COM_URL, category),
+          ])
+          if (searchLinks.length < MAX_SEARCH_LINKS) {
+            searchLinks.push(amazonCaSearchLink, amazonComSearchLink)
+          }
+        } catch (err) {}
       }
     }
 
     const handleMoversAndShakers = async () => {
       let productsAsin = []
 
-      await goto(
-        MOVERS_AND_SHAKERS_URL,
-        async (page) => {
-          const selector = `[${PRODUCTS_LIST_ATTR}]`
-          await page.waitForSelector(selector)
+      try {
+        await goto(
+          MOVERS_AND_SHAKERS_URL,
+          async (page) => {
+            const selector = `[${PRODUCTS_LIST_ATTR}]`
+            await page.waitForSelector(selector)
 
-          console.time('Time')
+            console.time('Time')
 
-          productsAsin = await page.$eval(
-            selector,
-            (el, attr) => JSON.parse(el.getAttribute(attr)).map(({ id }) => id),
-            PRODUCTS_LIST_ATTR
-          )
-          Logger.info(`\nASIN: ${productsAsin}\n`)
-        },
-        ['stylesheet']
-      )
+            productsAsin = await page.$eval(
+              selector,
+              (el, attr) => JSON.parse(el.getAttribute(attr)).map(({ id }) => id),
+              PRODUCTS_LIST_ATTR
+            )
+            Logger.info(`\nASIN: ${productsAsin}\n`)
+          },
+          ['stylesheet']
+        )
+      } catch (err) {}
 
       for (const chunks of chunk(productsAsin, MAX_TABS_CHUNK)) {
         await Promise.all(chunks.map((productId) => getProductCategorySearchLinks(productId)))
