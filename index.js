@@ -41,7 +41,6 @@ const start = async () => {
   try {
     browser = await puppeteer.launch({
       headless: false,
-      protocolTimeout: 0,
     })
 
     const setPageRequestInterception = async (page, allowedResourceTypes = []) => {
@@ -66,7 +65,7 @@ const start = async () => {
 
         if (res.ok()) {
           try {
-            await page.waitForSelector(CAPTCHA_SELECTOR)
+            await page.waitForSelector(CAPTCHA_SELECTOR, { timeout: 0 })
             Logger.error('Captcha')
             await page.reload(url)
           } catch (err) {}
@@ -88,10 +87,7 @@ const start = async () => {
       try {
         context = await browser.createBrowserContext()
         const page = await context.newPage()
-        await Promise.all([
-          setPageRequestInterception(page, allowedResourceTypes),
-          page.setDefaultTimeout(0),
-        ])
+        await setPageRequestInterception(page, allowedResourceTypes)
 
         Logger.info(url)
         await page.goto(url)
