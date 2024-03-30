@@ -66,7 +66,7 @@ const start = async () => {
 
         if (res.ok()) {
           try {
-            await page.waitForSelector(CAPTCHA_SELECTOR, { timeout: 0 })
+            await page.waitForSelector(CAPTCHA_SELECTOR)
             Logger.error('Captcha')
             await page.reload(url)
           } catch (err) {}
