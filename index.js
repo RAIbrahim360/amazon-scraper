@@ -76,42 +76,48 @@ const start = async () => {
         }
       })
     }
-    const goto = async (url, callback, allowedResourceTypes) => {
-      let page
-      try {
-        page = await browser.newPage()
-        await setPageRequestInterception(page, allowedResourceTypes)
+    const goto = (url, callback, allowedResourceTypes) => {
+      return new Promise(async (resolve) => {
+        let page
+        try {
+          page = await browser.newPage()
+          await setPageRequestInterception(page, allowedResourceTypes)
 
-        Logger.info(url)
-        await page.goto(url)
-        await callback(page)
-      } catch (err) {
-        Logger.error(err)
-      }
-      page?.close()
+          Logger.info(url)
+          await page.goto(url)
+          await callback(page)
+          resolve()
+        } catch (err) {
+          Logger.error(err)
+          reject(err)
+        }
+        page?.close()
+      })
     }
 
     const getCategorySearchLink = async (url, category) => {
       let searchUrl
 
-      await goto(url, async (page) => {
-        await page.waitForSelector(SEARCH_INPUT_SELECTOR)
-        await page.type(SEARCH_INPUT_SELECTOR, category)
+      try {
+        await goto(url, async (page) => {
+          await page.waitForSelector(SEARCH_INPUT_SELECTOR)
+          await page.type(SEARCH_INPUT_SELECTOR, category)
 
-        await page.waitForSelector(SEARCH_SUBMIT_SELECTOR)
-        await page.bringToFront()
-        await Promise.all([page.click(SEARCH_SUBMIT_SELECTOR), page.waitForNavigation()])
+          await page.waitForSelector(SEARCH_SUBMIT_SELECTOR)
+          await page.bringToFront()
+          await Promise.all([page.click(SEARCH_SUBMIT_SELECTOR), page.waitForNavigation()])
 
-        await page.waitForSelector(DEPARTMENT_SELECTOR)
-        await page.bringToFront()
-        await Promise.all([page.click(DEPARTMENT_SELECTOR), page.waitForNavigation()])
+          await page.waitForSelector(DEPARTMENT_SELECTOR)
+          await page.bringToFront()
+          await Promise.all([page.click(DEPARTMENT_SELECTOR), page.waitForNavigation()])
 
-        await page.waitForSelector(SEARCH_SUBMIT_SELECTOR)
-        await page.bringToFront()
-        await Promise.all([page.click(SEARCH_SUBMIT_SELECTOR), page.waitForNavigation()])
+          await page.waitForSelector(SEARCH_SUBMIT_SELECTOR)
+          await page.bringToFront()
+          await Promise.all([page.click(SEARCH_SUBMIT_SELECTOR), page.waitForNavigation()])
 
-        searchUrl = page.url()
-      })
+          searchUrl = page.url()
+        })
+      } catch (err) {}
 
       return searchUrl
     }
@@ -119,42 +125,48 @@ const start = async () => {
     const getProductCategorySearchLinks = async (productId) => {
       let category
 
-      await goto(`${AMAZON_CA_URL}/dp/${productId}`, async (page) => {
-        await page.waitForSelector(BREADCRUMB_SELECTOR)
-        category = await page.$eval(BREADCRUMB_SELECTOR, (el) => el.textContent.trim())
-      })
+      try {
+        await goto(`${AMAZON_CA_URL}/dp/${productId}`, async (page) => {
+          await page.waitForSelector(BREADCRUMB_SELECTOR)
+          category = await page.$eval(BREADCRUMB_SELECTOR, (el) => el.textContent.trim())
+        })
+      } catch (err) {}
 
       if (!categories.includes(category)) {
-        const [amazonCaSearchLink, amazonComSearchLink] = await Promise.all([
-          getCategorySearchLink(AMAZON_CA_URL, category),
-          getCategorySearchLink(AMAZON_COM_URL, category),
-        ])
-        if (searchLinks.length < MAX_SEARCH_LINKS) {
-          searchLinks.push(amazonCaSearchLink, amazonComSearchLink)
-        }
+        try {
+          const [amazonCaSearchLink, amazonComSearchLink] = await Promise.all([
+            getCategorySearchLink(AMAZON_CA_URL, category),
+            getCategorySearchLink(AMAZON_COM_URL, category),
+          ])
+          if (searchLinks.length < MAX_SEARCH_LINKS) {
+            searchLinks.push(amazonCaSearchLink, amazonComSearchLink)
+          }
+        } catch (err) {}
       }
     }
 
     const handleMoversAndShakers = async () => {
       let productsAsin = []
 
-      await goto(
-        MOVERS_AND_SHAKERS_URL,
-        async (page) => {
-          const selector = `[${PRODUCTS_LIST_ATTR}]`
-          await page.waitForSelector(selector)
+      try {
+        await goto(
+          MOVERS_AND_SHAKERS_URL,
+          async (page) => {
+            const selector = `[${PRODUCTS_LIST_ATTR}]`
+            await page.waitForSelector(selector)
 
-          console.time('Time')
+            console.time('Time')
 
-          productsAsin = await page.$eval(
-            selector,
-            (el, attr) => JSON.parse(el.getAttribute(attr)).map(({ id }) => id),
-            PRODUCTS_LIST_ATTR
-          )
-          Logger.info(`\nASIN: ${productsAsin}\n`)
-        },
-        ['stylesheet']
-      )
+            productsAsin = await page.$eval(
+              selector,
+              (el, attr) => JSON.parse(el.getAttribute(attr)).map(({ id }) => id),
+              PRODUCTS_LIST_ATTR
+            )
+            Logger.info(`\nASIN: ${productsAsin}\n`)
+          },
+          ['stylesheet']
+        )
+      } catch (err) {}
 
       for (const productId of productsAsin) {
         await getProductCategorySearchLinks(productId)
