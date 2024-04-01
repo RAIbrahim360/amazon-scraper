@@ -61,7 +61,7 @@ const start = async () => {
           try {
             await page.waitForSelector(CAPTCHA_SELECTOR, { timeout: 0 })
             Logger.error('Captcha')
-            await page.reload(url)
+            await page.reload(url, { waitUntil: 'networkidle0' })
           } catch (err) {}
         } else {
           const status = res.status()
@@ -69,22 +69,22 @@ const start = async () => {
           Logger.error(`${status}: "${url}"`)
 
           if (MUST_SUCCESS_AJAX_URLS.find((pattern) => url.match(pattern))) {
-            await page.reload(url)
+            await page.reload(url, { waitUntil: 'networkidle0' })
           } else if (status === 429) {
-            await page.goto(url)
+            await page.goto(url, { waitUntil: 'networkidle0' })
           }
         }
       })
     }
     const goto = (url, callback, allowedResourceTypes) => {
-      return new Promise(async (resolve) => {
+      return new Promise(async (resolve, reject) => {
         let page
         try {
           page = await browser.newPage()
           await setPageRequestInterception(page, allowedResourceTypes)
 
           Logger.info(url)
-          await page.goto(url)
+          await page.goto(url, { waitUntil: 'networkidle0' })
           await callback(page)
           resolve()
         } catch (err) {
@@ -98,27 +98,25 @@ const start = async () => {
     const getCategorySearchLink = async (url, category) => {
       let searchUrl
 
-      try {
-        await goto(url, async (page) => {
-          await page.waitForSelector(SEARCH_INPUT_SELECTOR)
-          await page.bringToFront()
-          await page.type(SEARCH_INPUT_SELECTOR, category)
+      await goto(url, async (page) => {
+        await page.waitForSelector(SEARCH_INPUT_SELECTOR)
+        await page.bringToFront()
+        await page.type(SEARCH_INPUT_SELECTOR, category)
 
-          await page.waitForSelector(SEARCH_SUBMIT_SELECTOR)
-          await page.bringToFront()
-          await Promise.all([page.click(SEARCH_SUBMIT_SELECTOR), page.waitForNavigation()])
+        await page.waitForSelector(SEARCH_SUBMIT_SELECTOR)
+        await page.bringToFront()
+        await Promise.all([page.click(SEARCH_SUBMIT_SELECTOR), page.waitForNavigation()])
 
-          await page.waitForSelector(DEPARTMENT_SELECTOR)
-          await page.bringToFront()
-          await Promise.all([page.click(DEPARTMENT_SELECTOR), page.waitForNavigation()])
+        await page.waitForSelector(DEPARTMENT_SELECTOR)
+        await page.bringToFront()
+        await Promise.all([page.click(DEPARTMENT_SELECTOR), page.waitForNavigation()])
 
-          await page.waitForSelector(SEARCH_SUBMIT_SELECTOR)
-          await page.bringToFront()
-          await Promise.all([page.click(SEARCH_SUBMIT_SELECTOR), page.waitForNavigation()])
+        await page.waitForSelector(SEARCH_SUBMIT_SELECTOR)
+        await page.bringToFront()
+        await Promise.all([page.click(SEARCH_SUBMIT_SELECTOR), page.waitForNavigation()])
 
-          searchUrl = page.url()
-        })
-      } catch (err) {}
+        searchUrl = page.url()
+      })
 
       return searchUrl
     }
