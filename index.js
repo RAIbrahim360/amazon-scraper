@@ -101,6 +101,7 @@ const start = async () => {
       try {
         await goto(url, async (page) => {
           await page.waitForSelector(SEARCH_INPUT_SELECTOR)
+          await page.bringToFront()
           await page.type(SEARCH_INPUT_SELECTOR, category)
 
           await page.waitForSelector(SEARCH_SUBMIT_SELECTOR)
