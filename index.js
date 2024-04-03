@@ -135,6 +135,7 @@ const start = async () => {
       } catch (err) {}
 
       if (category !== undefined && !categories.includes(category)) {
+        Logger.info('Category', category)
         try {
           const [amazonCaSearchLink, amazonComSearchLink] = await Promise.all([
             getCategorySearchLink(AMAZON_CA_URL, category),
