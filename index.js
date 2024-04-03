@@ -137,7 +137,7 @@ const start = async () => {
       if (!categories.includes(category)) {
         try {
           const [amazonCaSearchLink, amazonComSearchLink] = await Promise.all([
-            getCategorySearchLink('', category),
+            getCategorySearchLink(AMAZON_CA_URL, category),
             getCategorySearchLink(AMAZON_COM_URL, category),
           ])
           if (searchLinks.length < MAX_SEARCH_LINKS) {
