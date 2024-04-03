@@ -108,7 +108,10 @@ const start = async () => {
 
         await page.waitForSelector(DEPARTMENT_SELECTOR)
         await page.bringToFront()
-        await Promise.all([page.click(DEPARTMENT_SELECTOR), page.waitForNavigation()])
+        await Promise.all([
+          page.$eval(DEPARTMENT_SELECTOR, (el) => el.click()),
+          page.waitForNavigation(),
+        ])
 
         await page.waitForSelector(SEARCH_SUBMIT_SELECTOR)
         await page.bringToFront()
