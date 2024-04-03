@@ -113,7 +113,10 @@ const start = async () => {
         await Promise.all([page.click(SEARCH_SUBMIT_SELECTOR), page.waitForNavigation()])
 
         await page.waitForSelector(DEPARTMENT_SELECTOR)
-        await Promise.all([page.click(DEPARTMENT_SELECTOR), page.waitForNavigation()])
+        await Promise.all([
+          page.$eval(DEPARTMENT_SELECTOR, (elem) => elem.click()),
+          page.waitForNavigation(),
+        ])
 
         await page.waitForSelector(SEARCH_SUBMIT_SELECTOR)
         await Promise.all([page.click(SEARCH_SUBMIT_SELECTOR), page.waitForNavigation()])
