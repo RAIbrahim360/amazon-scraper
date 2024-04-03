@@ -67,7 +67,7 @@ const start = async () => {
           try {
             await page.waitForSelector(CAPTCHA_SELECTOR, { timeout: 0 })
             Logger.error('Captcha')
-            await page.reload(url, { waitUntil: 'networkidle2' })
+            await page.reload(url)
           } catch (err) {}
         } else {
           const status = res.status()
@@ -75,9 +75,9 @@ const start = async () => {
           Logger.error(`${status}: "${url}"`)
 
           if (MUST_SUCCESS_AJAX_URLS.find((pattern) => url.match(pattern))) {
-            await page.reload(url, { waitUntil: 'networkidle2' })
+            await page.reload(url)
           } else if (status === 429) {
-            await page.goto(url, { waitUntil: 'networkidle2' })
+            await page.goto(url)
           }
         }
       })
@@ -91,7 +91,7 @@ const start = async () => {
           await setPageRequestInterception(page, allowedResourceTypes)
 
           Logger.info(url)
-          await page.goto(url, { waitUntil: 'networkidle2' })
+          await page.goto(url)
           await callback(page)
           resolve()
         } catch (err) {
