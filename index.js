@@ -6,7 +6,6 @@ import StealthPlugin from 'puppeteer-extra-plugin-stealth'
 puppeteer.use(StealthPlugin())
 
 const AMAZON_CA_URL = 'https://www.amazon.ca'
-const AMAZON_COM_URL = 'https://www.amazon.com'
 const MOVERS_AND_SHAKERS_URL = `${AMAZON_CA_URL}/gp/movers-and-shakers`
 
 const MAX_SEARCH_LINKS = 10
@@ -136,12 +135,9 @@ const start = async () => {
       if (category !== undefined && !categories.includes(category)) {
         Logger.info('Category', category)
         try {
-          const [amazonCaSearchLink, amazonComSearchLink] = await Promise.all([
-            getCategorySearchLink(AMAZON_CA_URL, category),
-            getCategorySearchLink(AMAZON_COM_URL, category),
-          ])
+          const amazonCaSearchLink = await getCategorySearchLink(AMAZON_CA_URL, category)
           if (searchLinks.length < MAX_SEARCH_LINKS) {
-            searchLinks.push(amazonCaSearchLink, amazonComSearchLink)
+            searchLinks.push(amazonCaSearchLink)
           }
         } catch (err) {}
       }
