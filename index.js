@@ -3,189 +3,167 @@ import puppeteer from 'puppeteer-extra'
 import { Logger } from './helpers/logger.js'
 
 import StealthPlugin from 'puppeteer-extra-plugin-stealth'
+
 puppeteer.use(StealthPlugin())
 
-const AMAZON_CA_URL = 'https://www.amazon.ca'
-const MOVERS_AND_SHAKERS_URL = `${AMAZON_CA_URL}/gp/movers-and-shakers`
+const AMAZON_URL = 'https://www.amazon.ca'
 
 const MAX_SEARCH_LINKS = 10
 
-const PRODUCTS_LIST_ATTR = 'data-client-recs-list'
+const ASIN_LIST_ATTR = 'data-client-recs-list'
 const BREADCRUMB_SELECTOR = '#wayfinding-breadcrumbs_feature_div li:last-of-type a'
 const SEARCH_INPUT_SELECTOR = '#twotabsearchtextbox'
 const SEARCH_SUBMIT_SELECTOR = '#nav-search-submit-button'
 const DEPARTMENT_SELECTOR = '#departments ul li a'
 const CAPTCHA_SELECTOR = '#captchacharacters'
+const PAGINATION_SELECTOR = '.a-pagination .a-last'
+const PAGINATION_SELECTOR_DISABLED_CLASS = 'a-disabled'
 
-const MUST_SUCCESS_AJAX_URLS = ['/*.amazon.com/ah/ajax/counter']
-const REJECTED_URL_PATTERNS = [
-  'googlesyndication.com',
-  '/*.doubleclick.net',
-  '/*.amazon-adsystem.com',
-  '/*.adnxs.com',
-]
-const REJECTED_RESOURCE_TYPES = ['stylesheet', 'image', 'media', 'font']
+class Scraper {
+  constructor() {
+    this.browser = null
+    this.page = null
+    this.searchUrls = []
+    this.categories = []
+  }
 
-const start = async () => {
-  const searchLinks = []
-  const categories = []
-
-  let browser
-  try {
-    browser = await puppeteer.launch({
-      headless: false,
-    })
-
-    const setPageRequestInterception = async (page, allowedResourceTypes = []) => {
-      await page.setRequestInterception(true)
-      page.on('request', async (req) => {
-        const resourceType = req.resourceType()
-        const url = req.url()
-
-        const isUnnecessaryResourceType =
-          !allowedResourceTypes.includes(resourceType) &&
-          REJECTED_RESOURCE_TYPES.includes(resourceType)
-        const isUnnecessaryUrl = REJECTED_URL_PATTERNS.find((pattern) => url.match(pattern))
-
-        if (isUnnecessaryResourceType || isUnnecessaryUrl) {
-          req.abort()
-        } else {
-          req.continue()
-        }
-      })
-      page.on('response', async (res) => {
-        const url = res.url()
-
-        if (res.ok()) {
-          try {
-            await page.waitForSelector(CAPTCHA_SELECTOR, { timeout: 0 })
-            Logger.error('Captcha')
-            await page.reload(url)
-          } catch (err) {}
-        } else {
-          const status = res.status()
-
-          Logger.error(`${status}: "${url}"`)
-
-          if (MUST_SUCCESS_AJAX_URLS.find((pattern) => url.match(pattern))) {
-            await page.reload(url)
-          } else if (status === 429) {
-            await page.goto(url)
-          }
-        }
-      })
+  async start() {
+    try {
+      this.browser = await puppeteer.launch({ headless: false })
+      await this.setPage()
+      await this.handleParse()
+      fs.writeFileSync('output.txt', this.searchUrls.join('\n'))
+      Logger.success('DONE. Check output.txt.')
+    } catch (err) {
+      Logger.error(`Scraper failed: ${err.message}`)
+    } finally {
+      await this.browser?.close()
+      process.exit()
     }
-    const goto = (url, callback, allowedResourceTypes) => {
-      return new Promise(async (resolve, reject) => {
-        let page
-        try {
-          page = await browser.newPage()
-          await setPageRequestInterception(page, allowedResourceTypes)
+  }
 
-          Logger.info(url)
-          await page.goto(url)
-          await callback(page)
-          resolve()
-        } catch (err) {
-          Logger.error(err)
-          reject(err)
-        }
-        page?.close()
-      })
-    }
+  async setPage() {
+    const [page] = await this.browser.pages()
+    this.page = page
+    await this.page.setViewport({ width: 1920, height: 1080 })
+  }
 
-    const getCategorySearchLink = async (url, category) => {
-      let searchUrl
-
-      await goto(url, async (page) => {
-        await page.waitForSelector(SEARCH_INPUT_SELECTOR)
-        await page.type(SEARCH_INPUT_SELECTOR, category)
-
-        await page.waitForSelector(SEARCH_SUBMIT_SELECTOR)
-        await page.bringToFront()
-        await Promise.all([page.click(SEARCH_SUBMIT_SELECTOR), page.waitForNavigation()])
-
-        await page.waitForSelector(DEPARTMENT_SELECTOR)
-        await page.bringToFront()
-        await Promise.all([
-          page.$eval(DEPARTMENT_SELECTOR, (el) => el.click()),
-          page.waitForNavigation(),
-        ])
-
-        await page.waitForSelector(SEARCH_SUBMIT_SELECTOR)
-        await page.bringToFront()
-        await Promise.all([page.click(SEARCH_SUBMIT_SELECTOR), page.waitForNavigation()])
-
-        searchUrl = page.url()
-      })
-
-      return searchUrl
-    }
-
-    const getProductCategorySearchLinks = async (productId) => {
-      let category
-
-      try {
-        await goto(`${AMAZON_CA_URL}/dp/${productId}`, async (page) => {
-          await page.waitForSelector(BREADCRUMB_SELECTOR)
-          category = await page.$eval(BREADCRUMB_SELECTOR, (el) => el.textContent.trim())
-        })
-      } catch (err) {}
-
-      if (category !== undefined && !categories.includes(category)) {
-        Logger.info('Category', category)
-        try {
-          const amazonCaSearchLink = await getCategorySearchLink(AMAZON_CA_URL, category)
-          if (searchLinks.length < MAX_SEARCH_LINKS) {
-            searchLinks.push(amazonCaSearchLink)
-          }
-        } catch (err) {}
+  async setPageInterceptions() {
+    await this.page.setRequestInterception(true)
+    this.page.on('request', (req) => {
+      const blockedResourceTypes = ['image', 'stylesheet', 'font']
+      if (blockedResourceTypes.includes(req.resourceType())) {
+        return req.abort()
       }
+
+      req.continue()
+    })
+  }
+
+  async goto(url) {
+    const response = await this.page.goto(url, { waitUntil: 'networkidle2' })
+
+    if (response.status() === 429) {
+      Logger.error(`429 Too Many Requests error detected: ${url}`)
+      return await this.goto(url)
     }
 
-    const handleMoversAndShakers = async () => {
-      let productsAsin = []
+    const isCaptchaVisible = await this.page.$(CAPTCHA_SELECTOR)
+    if (isCaptchaVisible) {
+      await this.goto(url)
+    }
+  }
+
+  async getCategorySearchUrl(category) {
+    await this.page.waitForSelector(SEARCH_INPUT_SELECTOR)
+    await this.page.type(SEARCH_INPUT_SELECTOR, category)
+
+    await this.page.waitForSelector(SEARCH_SUBMIT_SELECTOR)
+    await Promise.all([this.page.waitForNavigation(), this.page.click(SEARCH_SUBMIT_SELECTOR)])
+
+    await this.page.waitForSelector(DEPARTMENT_SELECTOR)
+    await Promise.all([this.page.waitForNavigation(), this.page.click(DEPARTMENT_SELECTOR)])
+
+    return this.page.url()
+  }
+
+  async handleCategorySearch(asin) {
+    await this.goto(`${AMAZON_URL}/dp/${asin}`)
+
+    await this.page.waitForSelector(BREADCRUMB_SELECTOR)
+    const category = await this.page.$eval(BREADCRUMB_SELECTOR, (el) => el.textContent.trim())
+
+    if (!this.categories.includes(category)) {
+      Logger.info(`Category: ${category}`)
+      this.categories.push(category)
+
+      const searchUrl = await this.getCategorySearchUrl(category)
+      this.searchUrls.push(searchUrl)
+    }
+  }
+
+  async handleParse() {
+    await this.goto(AMAZON_URL)
+
+    const allAsinList = []
+
+    let firstAsinListFound = false
+    while (true) {
+      const asinListSelector = `[${ASIN_LIST_ATTR}]`
+      await this.page.waitForSelector(asinListSelector)
+
+      if (!firstAsinListFound) {
+        await this.setPageInterceptions()
+        firstAsinListFound = true
+      }
+
+      const asinList = await this.page.$eval(
+        asinListSelector,
+        (el, attr) => JSON.parse(el.getAttribute(attr)).map(({ id }) => id),
+        ASIN_LIST_ATTR
+      )
+      allAsinList.push(...asinList)
+      Logger.info(`ASINs on current page: ${asinList.join(', ')}`)
 
       try {
-        await goto(
-          MOVERS_AND_SHAKERS_URL,
-          async (page) => {
-            const selector = `[${PRODUCTS_LIST_ATTR}]`
-            await page.waitForSelector(selector)
+        await this.page.waitForSelector(PAGINATION_SELECTOR, { timeout: 3000 })
 
-            console.time('Time')
-
-            productsAsin = await page.$eval(
-              selector,
-              (el, attr) => JSON.parse(el.getAttribute(attr)).map(({ id }) => id),
-              PRODUCTS_LIST_ATTR
-            )
-            Logger.info(`\nASIN: ${productsAsin}\n`)
-          },
-          ['stylesheet']
+        const isLastPage = await this.page.$eval(
+          PAGINATION_SELECTOR,
+          (el, className) => el.classList.contains(className),
+          PAGINATION_SELECTOR_DISABLED_CLASS
         )
-      } catch (err) {}
-
-      for (const productId of productsAsin) {
-        await getProductCategorySearchLinks(productId)
-
-        if (searchLinks.length >= MAX_SEARCH_LINKS) {
+        if (isLastPage) {
+          Logger.info('Reached the last page.')
           break
         }
+
+        await Promise.all([this.page.waitForNavigation(), this.page.click(PAGINATION_SELECTOR)])
+      } catch (err) {
+        Logger.info(
+          'Pagination element not found or timeout reached. Likely the last or only page.'
+        )
+        break
       }
     }
 
-    await handleMoversAndShakers()
+    Logger.info(`Total ${allAsinList.length.toLocaleString('en')} ASINs: ${allAsinList.join(', ')}`)
 
+    console.time('Time')
+    for (const asin of allAsinList) {
+      if (this.searchUrls.length >= MAX_SEARCH_LINKS) {
+        break
+      }
+
+      try {
+        await this.handleCategorySearch(asin)
+      } catch (e) {
+        Logger.error(`Error processing ASIN ${asin}: ${e.message}`)
+      }
+    }
     console.timeEnd('Time')
-
-    fs.writeFileSync('output.txt', searchLinks.join('\n'))
-    Logger.success('DONE. Check output.txt.')
-  } catch (err) {
-    Logger.error(err)
-  } finally {
-    browser?.close()
-    process.exit()
   }
 }
-start()
+
+const scraper = new Scraper()
+scraper.start()
